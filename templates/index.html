@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>南网采购平台 - 数据爬取系统</title>
+    <meta name="description" content="中国南方电网采购公告自动爬取与管理系统">
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <h1>南网采购平台 · 数据爬取系统</h1>
+            </div>
+            <div class="header-status" id="headerStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">就绪</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容 -->
+    <main class="main">
+        <!-- Tab 导航 -->
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="settings" onclick="switchTab('settings')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+                爬取设置
+            </button>
+            <button class="tab-btn" data-tab="data" onclick="switchTab('data')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
+                </svg>
+                数据展示
+            </button>
+        </nav>
+
+        <!-- ========== 爬取设置模块 ========== -->
+        <section class="tab-content active" id="tab-settings">
+            <div class="settings-grid">
+                <!-- 爬取配置卡片 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📋 爬取配置</h2>
+                    </div>
+                    <div class="card-body">
+                        <!-- 类别选择 -->
+                        <div class="form-group">
+                            <label class="form-label">公告类别</label>
+                            <div class="checkbox-group">
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="cat-engineering" value="工程" checked>
+                                    <span class="checkbox-custom"></span>
+                                    <span>工程</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="cat-service" value="服务" checked>
+                                    <span class="checkbox-custom"></span>
+                                    <span>服务</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 公司筛选 -->
+                        <div class="form-group">
+                            <label class="form-label">发布单位（模糊搜索）</label>
+                            <div class="autocomplete-wrapper">
+                                <input type="text" id="companyFilter" class="form-input"
+                                       placeholder="输入公司名称关键词，如"广东电网""
+                                       autocomplete="off">
+                                <div class="autocomplete-list" id="companyList"></div>
+                            </div>
+                            <p class="form-hint">留空则爬取全部单位的公告</p>
+                        </div>
+
+                        <!-- 爬取天数 -->
+                        <div class="form-group">
+                            <label class="form-label">爬取天数</label>
+                            <select id="scrapeDays" class="form-select">
+                                <option value="1">最近 1 天</option>
+                                <option value="3" selected>最近 3 天</option>
+                                <option value="5">最近 5 天</option>
+                                <option value="7">最近 7 天</option>
+                            </select>
+                        </div>
+
+                        <!-- 最大翻页数 -->
+                        <div class="form-group">
+                            <label class="form-label">每类别最大翻页数</label>
+                            <select id="maxPages" class="form-select">
+                                <option value="3">3 页</option>
+                                <option value="5" selected>5 页</option>
+                                <option value="10">10 页</option>
+                            </select>
+                        </div>
+
+                        <div class="form-actions">
+                            <button class="btn btn-primary btn-lg" id="btnScrapeNow" onclick="startScrape()">
+                                🚀 立即爬取
+                            </button>
+                            <button class="btn btn-secondary" onclick="saveSettings()">
+                                💾 保存设置
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 定时任务 & Webhook 卡片 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>⏰ 定时任务 & 推送</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="form-label">定时执行时间</label>
+                            <div class="time-picker">
+                                <select id="scheduleHour" class="form-select time-select">
+                                    <!-- 0-23 小时 -->
+                                </select>
+                                <span class="time-sep">:</span>
+                                <select id="scheduleMinute" class="form-select time-select">
+                                    <!-- 0-59 分钟 -->
+                                </select>
+                            </div>
+                            <p class="form-hint">每天在指定时间自动爬取并推送</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">企业微信 Webhook Key</label>
+                            <input type="text" id="webhookKey" class="form-input"
+                                   placeholder="粘贴企业微信机器人的 Key">
+                            <p class="form-hint">在企业微信群 → 添加群机器人 → 获取 Webhook 地址中的 key 部分</p>
+                        </div>
+
+                        <button class="btn btn-secondary" onclick="saveSettings()">
+                            💾 保存设置
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 运行状态卡片 -->
+                <div class="card card-full">
+                    <div class="card-header">
+                        <h2>📡 运行状态</h2>
+                        <button class="btn btn-ghost btn-sm" onclick="refreshStatus()">刷新</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="status-bar">
+                            <div class="status-item">
+                                <span class="status-label">运行状态</span>
+                                <span class="status-value" id="runningStatus">-</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">上次执行</span>
+                                <span class="status-value" id="lastRunTime">-</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">上次结果</span>
+                                <span class="status-value" id="lastResult">-</span>
+                            </div>
+                        </div>
+                        <div class="progress-log" id="progressLog">
+                            <p class="log-placeholder">暂无运行日志</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== 数据展示模块 ========== -->
+        <section class="tab-content" id="tab-data">
+            <!-- 筛选条件 -->
+            <div class="card filter-card">
+                <div class="filter-bar">
+                    <div class="filter-item">
+                        <label>类别</label>
+                        <select id="filterCategory" class="form-select" onchange="loadData()">
+                            <option value="">全部</option>
+                            <option value="工程">工程</option>
+                            <option value="服务">服务</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label>发布单位</label>
+                        <input type="text" id="filterCompany" class="form-input"
+                               placeholder="模糊搜索" onchange="loadData()">
+                    </div>
+                    <div class="filter-item">
+                        <label>开始日期</label>
+                        <input type="date" id="filterDateFrom" class="form-input" onchange="loadData()">
+                    </div>
+                    <div class="filter-item">
+                        <label>结束日期</label>
+                        <input type="date" id="filterDateTo" class="form-input" onchange="loadData()">
+                    </div>
+                    <div class="filter-item">
+                        <label>关键词</label>
+                        <input type="text" id="filterKeyword" class="form-input"
+                               placeholder="标题关键词">
+                    </div>
+                    <div class="filter-actions">
+                        <button class="btn btn-primary" onclick="loadData()">🔍 查询</button>
+                        <button class="btn btn-secondary" onclick="exportExcel()">📥 导出 Excel</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据表格 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 id="dataTitle">公告列表</h2>
+                    <span class="badge" id="totalCount">0 条</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table" id="dataTable">
+                        <thead>
+                            <tr>
+                                <th width="40">#</th>
+                                <th>公告标题</th>
+                                <th width="180">发布单位</th>
+                                <th width="80">类别</th>
+                                <th width="110">公告类型</th>
+                                <th width="110">发布日期</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataBody">
+                            <tr>
+                                <td colspan="6" class="empty-state">暂无数据，请先执行爬取</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 分页 -->
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

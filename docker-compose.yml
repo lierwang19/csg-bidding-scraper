@@ -1,0 +1,23 @@
+name: csg-scraper
+
+services:
+  csg-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # 构建时使用代理加速下载
+        HTTP_PROXY: http://host.docker.internal:30810
+        HTTPS_PROXY: http://host.docker.internal:30810
+    container_name: csg-scraper
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+    # 如需运行时也走代理，取消下面注释
+    # environment:
+    #   - HTTP_PROXY=http://host.docker.internal:30810
+    #   - HTTPS_PROXY=http://host.docker.internal:30810
