@@ -76,13 +76,23 @@ async function loadSettings() {
         const resp = await fetch("/api/settings");
         const data = await resp.json();
 
+        // 来源
+        const sources = (data.scrape_sources || "bidding.csg.cn,ecsg.com.cn").split(",");
+        document.getElementById("src-bidding").checked = sources.includes("bidding.csg.cn");
+        document.getElementById("src-ecsg").checked = sources.includes("ecsg.com.cn");
+
         // 类别
         const cats = (data.categories || "工程,服务").split(",");
         document.getElementById("cat-engineering").checked = cats.includes("工程");
         document.getElementById("cat-service").checked = cats.includes("服务");
+        const goodsEl = document.getElementById("cat-goods");
+        if (goodsEl) goodsEl.checked = cats.includes("货物");
 
         // 公司
         document.getElementById("companyFilter").value = data.filter_company || "";
+
+        // 标题关键词
+        document.getElementById("titleKeywords").value = data.title_keywords || "";
 
         // 天数
         document.getElementById("scrapeDays").value = data.scrape_days || 3;
@@ -105,10 +115,18 @@ async function saveSettings() {
     const categories = [];
     if (document.getElementById("cat-engineering").checked) categories.push("工程");
     if (document.getElementById("cat-service").checked) categories.push("服务");
+    const goodsEl = document.getElementById("cat-goods");
+    if (goodsEl && goodsEl.checked) categories.push("货物");
+
+    const sources = [];
+    if (document.getElementById("src-bidding").checked) sources.push("bidding.csg.cn");
+    if (document.getElementById("src-ecsg").checked) sources.push("ecsg.com.cn");
 
     const settings = {
         categories: categories.join(","),
+        scrape_sources: sources.join(","),
         filter_company: document.getElementById("companyFilter").value,
+        title_keywords: document.getElementById("titleKeywords").value,
         scrape_days: parseInt(document.getElementById("scrapeDays").value),
         max_pages: parseInt(document.getElementById("maxPages").value),
         schedule_hour: parseInt(document.getElementById("scheduleHour").value),
@@ -134,10 +152,21 @@ async function startScrape() {
     const categories = [];
     if (document.getElementById("cat-engineering").checked) categories.push("工程");
     if (document.getElementById("cat-service").checked) categories.push("服务");
+    const goodsEl = document.getElementById("cat-goods");
+    if (goodsEl && goodsEl.checked) categories.push("货物");
+
+    const sources = [];
+    if (document.getElementById("src-bidding").checked) sources.push("bidding.csg.cn");
+    if (document.getElementById("src-ecsg").checked) sources.push("ecsg.com.cn");
+
     const company = document.getElementById("companyFilter").value;
 
     if (categories.length === 0) {
         showToast("error", "请至少选择一个类别");
+        return;
+    }
+    if (sources.length === 0) {
+        showToast("error", "请至少选择一个爬取来源");
         return;
     }
 
@@ -152,7 +181,7 @@ async function startScrape() {
         const resp = await fetch("/api/scrape", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ categories, company }),
+            body: JSON.stringify({ categories, company, sources }),
         });
         const data = await resp.json();
 
@@ -189,7 +218,6 @@ async function refreshStatus() {
         const resp = await fetch("/api/status");
         const data = await resp.json();
 
-        // 运行状态
         const runningEl = document.getElementById("runningStatus");
         const statusDot = document.querySelector(".status-dot");
         const statusText = document.querySelector(".status-text");
@@ -215,23 +243,20 @@ async function refreshStatus() {
             stopStatusPolling();
         }
 
-        // 上次执行
         document.getElementById("lastRunTime").textContent = data.last_run || "从未执行";
 
-        // 上次结果
         const resultEl = document.getElementById("lastResult");
         if (data.last_result) {
             resultEl.textContent = data.last_result.message || "-";
             resultEl.style.color = data.last_result.success ? "var(--accent-green)" : "var(--accent-red)";
         }
 
-        // 进度日志
         const logEl = document.getElementById("progressLog");
         if (data.progress && data.progress.length > 0) {
             logEl.innerHTML = data.progress.map(line => {
                 let cls = "log-line";
                 if (line.includes("❌") || line.includes("失败") || line.includes("⚠")) cls += " error";
-                if (line.includes("完成")) cls += " success";
+                if (line.includes("完成") || line.includes("━━━")) cls += " success";
                 return `<div class="${cls}">${escapeHtml(line)}</div>`;
             }).join("");
             logEl.scrollTop = logEl.scrollHeight;
@@ -283,16 +308,18 @@ async function loadData(page) {
     });
 
     const category = document.getElementById("filterCategory").value;
-    const company = document.getElementById("filterCompany").value;
+    const company = document.getElementById("filterCompany")?.value || "";
     const dateFrom = document.getElementById("filterDateFrom").value;
     const dateTo = document.getElementById("filterDateTo").value;
     const keyword = document.getElementById("filterKeyword").value;
+    const source = document.getElementById("filterSource")?.value || "";
 
     if (category) params.set("category", category);
     if (company) params.set("company", company);
     if (dateFrom) params.set("date_from", dateFrom);
     if (dateTo) params.set("date_to", dateTo);
     if (keyword) params.set("keyword", keyword);
+    if (source) params.set("source", source);
 
     try {
         const resp = await fetch(`/api/announcements?${params}`);
@@ -310,13 +337,16 @@ function renderTable(items, page, pageSize) {
     const tbody = document.getElementById("dataBody");
 
     if (!items || items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-state">暂无数据，请先执行爬取</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" class="empty-state">暂无数据，请先执行爬取</td></tr>`;
         return;
     }
 
     tbody.innerHTML = items.map((item, idx) => {
         const num = (page - 1) * pageSize + idx + 1;
-        const catClass = item.category === "工程" ? "tag-engineering" : "tag-service";
+        const catClass = item.category === "工程" ? "tag-engineering" :
+            item.category === "货物" ? "tag-goods" : "tag-service";
+        const sourceShort = (item.source || "").includes("ecsg") ? "电子交易" : "供应链";
+
         return `
             <tr>
                 <td>${num}</td>
@@ -326,9 +356,15 @@ function renderTable(items, page, pageSize) {
                         ${escapeHtml(item.title)}
                     </a>
                 </td>
-                <td>${escapeHtml(item.company || "-")}</td>
-                <td><span class="tag ${catClass}">${escapeHtml(item.category || "-")}</span></td>
                 <td>${escapeHtml(item.announcement_type || "-")}</td>
+                <td>${escapeHtml(item.tenderer || item.company || "-")}</td>
+                <td title="${escapeHtml(item.bid_packages || "")}">${escapeHtml(truncate(item.bid_packages, 20) || "-")}</td>
+                <td>${escapeHtml(item.estimated_amount || "-")}</td>
+                <td>${escapeHtml(item.bidding_method || "-")}</td>
+                <td>${escapeHtml(item.reg_end_time || "-")}</td>
+                <td>${escapeHtml(item.bid_deadline || "-")}</td>
+                <td><span class="tag ${catClass}">${escapeHtml(item.category || "-")}</span></td>
+                <td><span class="tag tag-source">${escapeHtml(sourceShort)}</span></td>
                 <td>${escapeHtml(item.publish_date || "-")}</td>
             </tr>
         `;
@@ -345,10 +381,8 @@ function renderPagination(page, totalPages, total) {
 
     let html = "";
 
-    // 上一页
     html += `<button class="page-btn" ${page <= 1 ? "disabled" : ""} onclick="loadData(${page - 1})">‹</button>`;
 
-    // 页码
     const range = getPageRange(page, totalPages);
     if (range[0] > 1) {
         html += `<button class="page-btn" onclick="loadData(1)">1</button>`;
@@ -364,9 +398,7 @@ function renderPagination(page, totalPages, total) {
         html += `<button class="page-btn" onclick="loadData(${totalPages})">${totalPages}</button>`;
     }
 
-    // 下一页
     html += `<button class="page-btn" ${page >= totalPages ? "disabled" : ""} onclick="loadData(${page + 1})">›</button>`;
-
     html += `<span class="page-info">共 ${total} 条</span>`;
 
     el.innerHTML = html;
@@ -389,16 +421,18 @@ function getPageRange(current, total) {
 function exportExcel() {
     const params = new URLSearchParams();
     const category = document.getElementById("filterCategory").value;
-    const company = document.getElementById("filterCompany").value;
+    const company = document.getElementById("filterCompany")?.value || "";
     const dateFrom = document.getElementById("filterDateFrom").value;
     const dateTo = document.getElementById("filterDateTo").value;
     const keyword = document.getElementById("filterKeyword").value;
+    const source = document.getElementById("filterSource")?.value || "";
 
     if (category) params.set("category", category);
     if (company) params.set("company", company);
     if (dateFrom) params.set("date_from", dateFrom);
     if (dateTo) params.set("date_to", dateTo);
     if (keyword) params.set("keyword", keyword);
+    if (source) params.set("source", source);
 
     window.location.href = `/api/export?${params}`;
     showToast("success", "正在导出 Excel...");
@@ -431,4 +465,9 @@ function escapeHtml(str) {
     const div = document.createElement("div");
     div.textContent = str;
     return div.innerHTML;
+}
+
+function truncate(str, maxLen) {
+    if (!str) return "";
+    return str.length > maxLen ? str.substring(0, maxLen) + "..." : str;
 }

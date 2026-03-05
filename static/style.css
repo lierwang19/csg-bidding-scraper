@@ -633,6 +633,17 @@ body {
     color: #43e97b;
 }
 
+.tag-goods {
+    background: rgba(249, 168, 37, 0.15);
+    color: #f9a825;
+}
+
+.tag-source {
+    background: rgba(79, 172, 254, 0.1);
+    color: var(--accent-blue);
+    font-size: 11px;
+}
+
 /* ======== Pagination ======== */
 .pagination {
     display: flex;

@@ -1,6 +1,7 @@
 """
 定时调度模块
 使用 APScheduler 实现每天定时爬取并推送
+支持多来源（bidding.csg.cn / ecsg.com.cn）
 """
 import logging
 import threading
@@ -11,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 import storage
 import scraper
+import scraper_ecsg
 import notifier
 
 logger = logging.getLogger(__name__)
@@ -31,13 +33,12 @@ def _progress_callback(msg):
     """记录爬取进度"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     scrape_status["progress"].append(f"[{timestamp}] {msg}")
-    # 只保留最近 50 条进度
-    if len(scrape_status["progress"]) > 50:
-        scrape_status["progress"] = scrape_status["progress"][-50:]
+    if len(scrape_status["progress"]) > 100:
+        scrape_status["progress"] = scrape_status["progress"][-100:]
 
 
-def run_scrape_job(categories=None, company=None):
-    """执行一次爬取任务"""
+def run_scrape_job(categories=None, company=None, sources=None):
+    """执行一次爬取任务（支持多来源）"""
     if scrape_status["running"]:
         logger.warning("爬取任务正在执行中，跳过本次")
         return {"success": False, "message": "爬取任务正在执行中"}
@@ -54,29 +55,74 @@ def run_scrape_job(categories=None, company=None):
         if company is None:
             company = storage.get_setting("filter_company", "")
 
+        if sources is None:
+            sources_setting = storage.get_setting("scrape_sources", "bidding.csg.cn,ecsg.com.cn")
+            sources = [s.strip() for s in sources_setting.split(",") if s.strip()]
+
         max_pages = int(storage.get_setting("max_pages", "5"))
         days = int(storage.get_setting("scrape_days", "3"))
 
-        _progress_callback(f"开始爬取 - 类别: {categories}, 公司: {company or '全部'}, 天数: {days}")
+        _progress_callback(f"开始爬取 - 来源: {sources}, 类别: {categories}, 公司: {company or '全部'}, 天数: {days}")
 
-        # 执行爬取
-        items = scraper.run_scraper(
-            categories=categories,
-            company=company or None,
-            max_pages=max_pages,
-            days=days,
-            progress_callback=_progress_callback
-        )
+        all_items = []
+
+        # bidding.csg.cn
+        if "bidding.csg.cn" in sources:
+            _progress_callback("━━━ 开始爬取 南网供应链(bidding.csg.cn) ━━━")
+            try:
+                items = scraper.run_scraper(
+                    categories=categories,
+                    company=company or None,
+                    max_pages=max_pages,
+                    days=days,
+                    progress_callback=_progress_callback
+                )
+                all_items.extend(items)
+            except Exception as e:
+                logger.error(f"bidding.csg.cn 爬取失败: {e}", exc_info=True)
+                _progress_callback(f"❌ bidding.csg.cn 爬取失败: {str(e)[:100]}")
+
+        # ecsg.com.cn
+        if "ecsg.com.cn" in sources:
+            _progress_callback("━━━ 开始爬取 电子交易平台(ecsg.com.cn) ━━━")
+            try:
+                items = scraper_ecsg.run_scraper(
+                    categories=categories,
+                    company=company or None,
+                    max_pages=max_pages,
+                    days=days,
+                    progress_callback=_progress_callback
+                )
+                all_items.extend(items)
+            except Exception as e:
+                logger.error(f"ecsg.com.cn 爬取失败: {e}", exc_info=True)
+                _progress_callback(f"❌ ecsg.com.cn 爬取失败: {str(e)[:100]}")
+
+        # 按标题关键词过滤
+        title_keywords_str = storage.get_setting("title_keywords", "")
+        if title_keywords_str.strip():
+            keywords = [kw.strip() for kw in title_keywords_str.split(",") if kw.strip()]
+            if keywords:
+                before_count = len(all_items)
+                all_items = [
+                    item for item in all_items
+                    if not any(kw in item.get("title", "") for kw in keywords)
+                ]
+                filtered_count = before_count - len(all_items)
+                _progress_callback(f"关键词过滤：{before_count} → {len(all_items)} 条（过滤掉 {filtered_count} 条）")
+                _progress_callback(f"过滤关键词: {', '.join(keywords)}")
+
+        # 清空旧数据并存入新数据（在新数据准备好后才清空，避免查询时看到空数据）
+        storage.clear_announcements()
+        _progress_callback("已清空旧数据")
 
         # 存入数据库
-        new_count = storage.save_announcements(items)
-        _progress_callback(f"入库完成：共 {len(items)} 条，新增 {new_count} 条")
+        new_count = storage.save_announcements(all_items)
+        _progress_callback(f"入库完成：共 {len(all_items)} 条，新增 {new_count} 条")
 
         # 推送微信
         webhook_key = storage.get_setting("webhook_key", "")
         if webhook_key and new_count > 0:
-            # 只推送新公告
-            today = datetime.now().strftime("%Y-%m-%d")
             since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
             new_announcements = storage.get_new_announcements_since(since)
             success, msg = notifier.send_wechat_message(webhook_key, new_announcements)
@@ -86,9 +132,9 @@ def run_scrape_job(categories=None, company=None):
 
         result = {
             "success": True,
-            "total": len(items),
+            "total": len(all_items),
             "new_count": new_count,
-            "message": f"爬取完成，共 {len(items)} 条，新增 {new_count} 条"
+            "message": f"爬取完成，共 {len(all_items)} 条，新增 {new_count} 条"
         }
         scrape_status["last_result"] = result
         scrape_status["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -154,7 +200,7 @@ def get_status():
         "running": scrape_status["running"],
         "last_run": scrape_status["last_run"] or storage.get_setting("last_run", "从未执行"),
         "last_result": scrape_status["last_result"],
-        "progress": scrape_status["progress"][-20:],
+        "progress": scrape_status["progress"][-30:],
         "schedule_hour": int(storage.get_setting("schedule_hour", "12")),
         "schedule_minute": int(storage.get_setting("schedule_minute", "0")),
     }
