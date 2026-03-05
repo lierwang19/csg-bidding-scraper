@@ -205,6 +205,7 @@ def _parse_search_results(html, category, cutoff_date):
 
             if date_text and date_text < cutoff_date:
                 should_stop = True
+                continue
 
         except Exception as e:
             logger.debug(f"解析单条公告出错: {e}")

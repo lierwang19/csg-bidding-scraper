@@ -147,10 +147,10 @@
                     </div>
                 </div>
 
-                <!-- 定时任务 & Webhook 卡片 -->
+                <!-- 定时任务 & 导出 卡片 -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>⏰ 定时任务 & 推送</h2>
+                        <h2>⏰ 定时任务 & 导出</h2>
                     </div>
                     <div class="card-body">
                         <div class="form-group">
@@ -164,13 +164,27 @@
                                     <!-- 0-59 分钟 -->
                                 </select>
                             </div>
-                            <p class="form-hint">每天在指定时间自动爬取并推送</p>
+                            <p class="form-hint">每天在指定时间自动爬取</p>
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">企业微信 Webhook Key</label>
-                            <input type="text" id="webhookKey" class="form-input" placeholder="粘贴企业微信机器人的 Key">
-                            <p class="form-hint">在企业微信群 → 添加群机器人 → 获取 Webhook 地址中的 key 部分</p>
+                            <label class="form-label">自动导出 Excel</label>
+                            <div class="checkbox-group">
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="autoExport">
+                                    <span class="checkbox-custom"></span>
+                                    <span>爬取完成后自动导出 Excel 文件</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="exportDirGroup">
+                            <label class="form-label">Excel 导出目录</label>
+                            <div class="input-with-btn">
+                                <input type="text" id="exportDir" class="form-input" value="./data/exports"
+                                    placeholder="文件保存路径">
+                                <button class="btn btn-ghost" type="button" onclick="openFolderPicker()">📂 浏览</button>
+                            </div>
                         </div>
 
                         <button class="btn btn-secondary" onclick="saveSettings()">
@@ -237,11 +251,13 @@
                     </div>
                     <div class="filter-item">
                         <label>开始日期</label>
-                        <input type="date" id="filterDateFrom" class="form-input" onchange="loadData()">
+                        <input type="text" id="filterDateFrom" class="form-input" placeholder="MM-DD" maxlength="5"
+                            onchange="loadData()">
                     </div>
                     <div class="filter-item">
                         <label>结束日期</label>
-                        <input type="date" id="filterDateTo" class="form-input" onchange="loadData()">
+                        <input type="text" id="filterDateTo" class="form-input" placeholder="MM-DD" maxlength="5"
+                            onchange="loadData()">
                     </div>
                     <div class="filter-item">
                         <label>关键词</label>
@@ -293,6 +309,26 @@
     </main>
 
     <script src="/static/app.js"></script>
+
+    <!-- 文件夹选择器弹窗 -->
+    <div class="modal-overlay" id="folderPickerModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>📂 选择导出目录</h3>
+                <button class="btn btn-ghost btn-sm" onclick="closeFolderPicker()">✕</button>
+            </div>
+            <div class="modal-path" id="folderCurrentPath">-</div>
+            <div class="modal-body">
+                <div class="folder-list" id="folderList">
+                    <p class="log-placeholder">加载中...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeFolderPicker()">取消</button>
+                <button class="btn btn-primary" onclick="selectFolder()">✅ 选择此目录</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

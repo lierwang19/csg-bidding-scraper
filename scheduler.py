@@ -1,6 +1,6 @@
 """
 定时调度模块
-使用 APScheduler 实现每天定时爬取并推送
+使用 APScheduler 实现每天定时爬取
 支持多来源（bidding.csg.cn / ecsg.com.cn）
 """
 import logging
@@ -13,7 +13,7 @@ from apscheduler.triggers.cron import CronTrigger
 import storage
 import scraper
 import scraper_ecsg
-import notifier
+import exporter
 
 logger = logging.getLogger(__name__)
 
@@ -120,15 +120,19 @@ def run_scrape_job(categories=None, company=None, sources=None):
         new_count = storage.save_announcements(all_items)
         _progress_callback(f"入库完成：共 {len(all_items)} 条，新增 {new_count} 条")
 
-        # 推送微信
-        webhook_key = storage.get_setting("webhook_key", "")
-        if webhook_key and new_count > 0:
-            since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-            new_announcements = storage.get_new_announcements_since(since)
-            success, msg = notifier.send_wechat_message(webhook_key, new_announcements)
-            _progress_callback(f"微信推送: {msg}")
-        elif not webhook_key:
-            _progress_callback("未配置 Webhook Key，跳过微信推送")
+        # 自动导出 Excel
+        auto_export = storage.get_setting("auto_export", "false") == "true"
+        if auto_export and len(all_items) > 0:
+            export_dir = storage.get_setting("export_dir", "./data/exports")
+            try:
+                filepath = exporter.export_to_file(all_items, export_dir)
+                if filepath:
+                    _progress_callback(f"📁 Excel 已导出: {filepath}")
+            except Exception as e:
+                logger.error(f"自动导出 Excel 失败: {e}", exc_info=True)
+                _progress_callback(f"❌ Excel 导出失败: {str(e)[:100]}")
+        elif auto_export:
+            _progress_callback("没有数据需要导出，跳过 Excel 导出")
 
         result = {
             "success": True,

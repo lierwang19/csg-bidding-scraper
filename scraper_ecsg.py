@@ -259,6 +259,7 @@ def _parse_api_response(response_data, category, type_name, cutoff_date):
 
             if date_text and date_text < cutoff_date:
                 should_stop = True
+                continue
 
             item = {
                 "title": title.strip(),

@@ -10,8 +10,10 @@ let statusTimer = null;
 // ======== 初始化 ========
 document.addEventListener("DOMContentLoaded", () => {
     initTimePicker();
-    loadSettings();
-    loadData();
+    loadSettings().then(() => {
+        setDefaultDateFilter();
+        loadData();
+    });
     refreshStatus();
 
     // 公司名搜索自动完成
@@ -104,8 +106,9 @@ async function loadSettings() {
         document.getElementById("scheduleHour").value = data.schedule_hour || 12;
         document.getElementById("scheduleMinute").value = data.schedule_minute || 0;
 
-        // Webhook
-        document.getElementById("webhookKey").value = data.webhook_key || "";
+        // 自动导出
+        document.getElementById("autoExport").checked = data.auto_export || false;
+        document.getElementById("exportDir").value = data.export_dir || "./data/exports";
     } catch (e) {
         console.error("加载设置失败:", e);
     }
@@ -131,7 +134,8 @@ async function saveSettings() {
         max_pages: parseInt(document.getElementById("maxPages").value),
         schedule_hour: parseInt(document.getElementById("scheduleHour").value),
         schedule_minute: parseInt(document.getElementById("scheduleMinute").value),
-        webhook_key: document.getElementById("webhookKey").value,
+        auto_export: document.getElementById("autoExport").checked,
+        export_dir: document.getElementById("exportDir").value,
     };
 
     try {
@@ -309,8 +313,8 @@ async function loadData(page) {
 
     const category = document.getElementById("filterCategory").value;
     const company = document.getElementById("filterCompany")?.value || "";
-    const dateFrom = document.getElementById("filterDateFrom").value;
-    const dateTo = document.getElementById("filterDateTo").value;
+    const dateFrom = _mmddToFull(document.getElementById("filterDateFrom").value);
+    const dateTo = _mmddToFull(document.getElementById("filterDateTo").value);
     const keyword = document.getElementById("filterKeyword").value;
     const source = document.getElementById("filterSource")?.value || "";
 
@@ -422,8 +426,8 @@ function exportExcel() {
     const params = new URLSearchParams();
     const category = document.getElementById("filterCategory").value;
     const company = document.getElementById("filterCompany")?.value || "";
-    const dateFrom = document.getElementById("filterDateFrom").value;
-    const dateTo = document.getElementById("filterDateTo").value;
+    const dateFrom = _mmddToFull(document.getElementById("filterDateFrom").value);
+    const dateTo = _mmddToFull(document.getElementById("filterDateTo").value);
     const keyword = document.getElementById("filterKeyword").value;
     const source = document.getElementById("filterSource")?.value || "";
 
@@ -470,4 +474,102 @@ function escapeHtml(str) {
 function truncate(str, maxLen) {
     if (!str) return "";
     return str.length > maxLen ? str.substring(0, maxLen) + "..." : str;
+}
+
+/**
+ * 将 MM-DD 格式转换为 YYYY-MM-DD（使用当前年份）
+ */
+function _mmddToFull(val) {
+    if (!val) return "";
+    val = val.trim();
+    // 已经是 YYYY-MM-DD 格式
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    // MM-DD 格式
+    if (/^\d{1,2}-\d{1,2}$/.test(val)) {
+        const year = new Date().getFullYear();
+        const parts = val.split("-");
+        return `${year}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+    }
+    return val;
+}
+
+/**
+ * 根据爬取天数设置默认日期过滤范围
+ */
+function setDefaultDateFilter() {
+    const days = parseInt(document.getElementById("scrapeDays").value) || 3;
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(now.getDate() - days);
+
+    const toStr = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const fromStr = `${String(from.getMonth() + 1).padStart(2, "0")}-${String(from.getDate()).padStart(2, "0")}`;
+
+    document.getElementById("filterDateFrom").value = fromStr;
+    document.getElementById("filterDateTo").value = toStr;
+}
+
+// ======== 文件夹选择器 ========
+let _folderPickerCurrentPath = "";
+
+function openFolderPicker() {
+    document.getElementById("folderPickerModal").classList.add("show");
+    // 从当前导出目录开始浏览
+    const currentDir = document.getElementById("exportDir").value;
+    browseTo(currentDir || "");
+}
+
+function closeFolderPicker() {
+    document.getElementById("folderPickerModal").classList.remove("show");
+}
+
+async function browseTo(path) {
+    const listEl = document.getElementById("folderList");
+    const pathEl = document.getElementById("folderCurrentPath");
+    listEl.innerHTML = '<p class="log-placeholder">加载中...</p>';
+
+    try {
+        const params = path ? `?path=${encodeURIComponent(path)}` : "";
+        const resp = await fetch(`/api/browse_dirs${params}`);
+        const data = await resp.json();
+
+        if (!data.success) {
+            listEl.innerHTML = `<p class="log-placeholder">❌ ${escapeHtml(data.message)}</p>`;
+            return;
+        }
+
+        _folderPickerCurrentPath = data.current;
+        pathEl.textContent = data.current;
+
+        let html = "";
+
+        // 返回上级目录
+        if (data.parent) {
+            html += `<div class="folder-item folder-parent" onclick="browseTo('${escapeHtml(data.parent)}')">
+                ⬆️ 返回上级目录
+            </div>`;
+        }
+
+        if (data.dirs.length === 0) {
+            html += '<p class="log-placeholder">此目录下没有子文件夹</p>';
+        } else {
+            for (const dir of data.dirs) {
+                const fullPath = data.current + "/" + dir;
+                html += `<div class="folder-item" onclick="browseTo('${escapeHtml(fullPath)}')">
+                    📁 ${escapeHtml(dir)}
+                </div>`;
+            }
+        }
+
+        listEl.innerHTML = html;
+    } catch (e) {
+        listEl.innerHTML = `<p class="log-placeholder">❌ 加载失败: ${escapeHtml(e.message)}</p>`;
+    }
+}
+
+function selectFolder() {
+    if (_folderPickerCurrentPath) {
+        document.getElementById("exportDir").value = _folderPickerCurrentPath;
+    }
+    closeFolderPicker();
 }
