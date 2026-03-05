@@ -224,7 +224,9 @@ def api_browse_dirs():
 
 # ======== 启动 ========
 
+# 启动定时调度器（无论是直接运行还是被 launcher 导入都需要启动）
+logger.info("🚀 南网采购平台爬取系统启动中...")
+scheduler.start_scheduler()
+
 if __name__ == "__main__":
-    logger.info("🚀 南网采购平台爬取系统启动中...")
-    scheduler.start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False)

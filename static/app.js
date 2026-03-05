@@ -14,7 +14,9 @@ document.addEventListener("DOMContentLoaded", () => {
         setDefaultDateFilter();
         loadData();
     });
+    // 启动状态轮询（始终轮询，以便检测定时任务启动）
     refreshStatus();
+    startStatusPolling(POLL_SLOW);
 
     // 公司名搜索自动完成
     const companyInput = document.getElementById("companyFilter");
@@ -205,16 +207,13 @@ async function startScrape() {
 }
 
 // ======== 状态轮询 ========
-function startStatusPolling() {
-    if (statusTimer) clearInterval(statusTimer);
-    statusTimer = setInterval(refreshStatus, 2000);
-}
+// 始终保持轮询（慢速 5s），爬取运行中切换为快速轮询（2s）
+const POLL_FAST = 2000;  // 运行中：每 2 秒
+const POLL_SLOW = 5000;  // 空闲时：每 5 秒
 
-function stopStatusPolling() {
-    if (statusTimer) {
-        clearInterval(statusTimer);
-        statusTimer = null;
-    }
+function startStatusPolling(interval) {
+    if (statusTimer) clearInterval(statusTimer);
+    statusTimer = setInterval(refreshStatus, interval || POLL_SLOW);
 }
 
 async function refreshStatus() {
@@ -235,7 +234,8 @@ async function refreshStatus() {
             btn.disabled = true;
             btn.innerHTML = "⏳ 爬取中...";
 
-            if (!statusTimer) startStatusPolling();
+            // 切换到快速轮询
+            startStatusPolling(POLL_FAST);
         } else {
             runningEl.textContent = "✅ 空闲";
             runningEl.style.color = "var(--accent-green)";
@@ -244,7 +244,8 @@ async function refreshStatus() {
             btn.disabled = false;
             btn.innerHTML = "🚀 立即爬取";
 
-            stopStatusPolling();
+            // 切换回慢速轮询（保持轮询以检测定时任务启动）
+            startStatusPolling(POLL_SLOW);
         }
 
         document.getElementById("lastRunTime").textContent = data.last_run || "从未执行";

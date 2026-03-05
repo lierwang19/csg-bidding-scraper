@@ -161,25 +161,32 @@ def start_scheduler():
     """启动定时调度器"""
     global _scheduler
 
-    with _scheduler_lock:
-        if _scheduler and _scheduler.running:
-            return
+    try:
+        with _scheduler_lock:
+            if _scheduler and _scheduler.running:
+                return
 
-        _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
+            _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
-        hour = int(storage.get_setting("schedule_hour", "12"))
-        minute = int(storage.get_setting("schedule_minute", "0"))
+            hour = int(storage.get_setting("schedule_hour", "12"))
+            minute = int(storage.get_setting("schedule_minute", "0"))
 
-        _scheduler.add_job(
-            run_scrape_job,
-            trigger=CronTrigger(hour=hour, minute=minute),
-            id="daily_scrape",
-            replace_existing=True,
-            name="每日定时爬取"
-        )
+            _scheduler.add_job(
+                run_scrape_job,
+                trigger=CronTrigger(hour=hour, minute=minute, timezone="Asia/Shanghai"),
+                id="daily_scrape",
+                replace_existing=True,
+                name="每日定时爬取"
+            )
 
-        _scheduler.start()
-        logger.info(f"定时任务已启动：每天 {hour:02d}:{minute:02d} 执行")
+            _scheduler.start()
+
+            # 打印下一次触发时间用于诊断
+            job = _scheduler.get_job("daily_scrape")
+            next_run = job.next_run_time if job else "未知"
+            logger.info(f"定时任务已启动：每天 {hour:02d}:{minute:02d} 执行，下次触发: {next_run}")
+    except Exception as e:
+        logger.error(f"启动定时调度器失败: {e}", exc_info=True)
 
 
 def update_schedule(hour, minute):
@@ -189,13 +196,21 @@ def update_schedule(hour, minute):
     storage.save_setting("schedule_hour", str(hour))
     storage.save_setting("schedule_minute", str(minute))
 
-    with _scheduler_lock:
-        if _scheduler and _scheduler.running:
-            _scheduler.reschedule_job(
-                "daily_scrape",
-                trigger=CronTrigger(hour=hour, minute=minute)
-            )
-            logger.info(f"定时任务已更新为：每天 {hour:02d}:{minute:02d}")
+    try:
+        with _scheduler_lock:
+            if _scheduler and _scheduler.running:
+                _scheduler.reschedule_job(
+                    "daily_scrape",
+                    trigger=CronTrigger(hour=hour, minute=minute, timezone="Asia/Shanghai")
+                )
+                # 打印下一次触发时间用于诊断
+                job = _scheduler.get_job("daily_scrape")
+                next_run = job.next_run_time if job else "未知"
+                logger.info(f"定时任务已更新为：每天 {hour:02d}:{minute:02d}，下次触发: {next_run}")
+            else:
+                logger.warning("调度器未运行，无法更新定时任务")
+    except Exception as e:
+        logger.error(f"更新定时任务失败: {e}", exc_info=True)
 
 
 def get_status():

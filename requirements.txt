@@ -5,3 +5,5 @@ lxml
 apscheduler
 requests
 openpyxl
+pystray
+Pillow

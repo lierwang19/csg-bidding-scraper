@@ -6,9 +6,16 @@ SQLite 数据存储模块
 """
 import sqlite3
 import os
+import sys
 from datetime import datetime, timedelta
 
-DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+# 数据库目录：打包后使用 exe 所在目录，开发模式使用脚本所在目录
+if getattr(sys, 'frozen', False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_DIR = os.path.join(_BASE_DIR, "data")
 DB_PATH = os.path.join(DB_DIR, "announcements.db")
 
 # 需要通过 ALTER TABLE 添加的新列（兼容旧数据库）
